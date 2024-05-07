@@ -10,6 +10,11 @@ import WebPhone from '../src/index';
 import incomingAudio from 'url:./audio/incoming.ogg';
 import outgoingAudio from 'url:./audio/outgoing.ogg';
 import type { WebPhoneInvitation } from '../src/session';
+
+import RCExtensible from '@rc-ex/core';
+import WebSocketExtension, { Events as WSExtensionEvents } from '@rc-ex/ws';
+import RCSDKExtension from '@rc-ex/rcsdk';
+
 global.jQuery = $;
 import('bootstrap');
 
@@ -125,6 +130,7 @@ $(() => {
       })
       .then((res) => res.json())
       .then(register)
+      .then(subscribeForTelephonySessionEvent)
       .then(makeCallForm)
       .catch((e) => {
         console.error('Error in main promise chain');
@@ -696,6 +702,37 @@ $(() => {
     });
 
     $app.empty().append($authForm).append($form);
+  }
+
+  function subscribeForTelephonySessionEvent() {
+    // https://github.com/ringcentral/ringcentral-extensible/tree/master/packages/extensions/ws
+    const rcExtensible = new RCExtensible();
+    const rcSDKExtension = new RCSDKExtension({ rcSdk: sdk });
+    const wsExtension = new WebSocketExtension();
+
+    // https://developers.ringcentral.com/api-reference/Extension-Telephony-Sessions-Event
+    wsExtension.eventEmitter.on(WSExtensionEvents.connectionReady, () => {
+      const eventFilters = [
+        '/restapi/v1.0/account/~/extension/~/telephony/sessions',
+        '/restapi/v1.0/account/~/extension/~/voicemail',
+      ];
+      wsExtension
+        .subscribe(eventFilters, handleSubscriptionEvent)
+        .then(() => {
+          console.log('Ready to receive telephony session events via WebSocket.');
+        })
+        .catch((err) => {
+          console.error('Listen to telephony events error ', err);
+        });
+    });
+
+    return rcExtensible.installExtension(rcSDKExtension).then(() => {
+      rcExtensible.installExtension(wsExtension);
+    });
+  }
+
+  function handleSubscriptionEvent(event) {
+    console.log('telephony session event: ', JSON.stringify(event, null, 2));
   }
 
   makeLoginForm();
